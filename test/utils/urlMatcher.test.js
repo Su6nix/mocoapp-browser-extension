@@ -295,6 +295,121 @@ describe("utils", () => {
         expect(service.match.id).toEqual("456")
         expect(service.name).toEqual("asana")
       })
+
+      describe("jira service management", () => {
+        it.each([
+          {
+            label: "custom queue",
+            url: "https://moco-bx.atlassian.net/jira/servicedesk/projects/ENIGMA/queues/custom/48/ENIGMA-8077",
+          },
+          {
+            label: "custom queue with query string",
+            url: "https://moco-bx.atlassian.net/jira/servicedesk/projects/ENIGMA/queues/custom/48/ENIGMA-8077?issueKey=ENIGMA-8077&subProduct=jira-servicedesk",
+          },
+          {
+            label: "custom queue with negative queue id",
+            url: "https://moco-bx.atlassian.net/jira/servicedesk/projects/ENIGMA/queues/custom/-1/ENIGMA-8077",
+          },
+          {
+            label: "custom queue, path id wins over selectedIssue",
+            url: "https://moco-bx.atlassian.net/jira/servicedesk/projects/ENIGMA/queues/custom/48/ENIGMA-8077?selectedIssue=OTHER-1&projectKey=OTHER",
+          },
+          {
+            label: "queue issue view",
+            url: "https://moco-bx.atlassian.net/jira/servicedesk/projects/ENIGMA/queues/issue/ENIGMA-8077",
+          },
+          {
+            label: "work category queue",
+            url: "https://moco-bx.atlassian.net/jira/servicedesk/projects/ENIGMA/section/service-requests/custom/75/ENIGMA-8077",
+          },
+          {
+            label: "issues view",
+            url: "https://moco-bx.atlassian.net/jira/servicedesk/projects/ENIGMA/issues/ENIGMA-8077",
+          },
+          {
+            label: "issues view with query string",
+            url: "https://moco-bx.atlassian.net/jira/servicedesk/projects/ENIGMA/issues/ENIGMA-8077?filter=allissues",
+          },
+          {
+            label: "board with selectedIssue",
+            url: "https://moco-bx.atlassian.net/jira/servicedesk/projects/ENIGMA/boards/4?selectedIssue=ENIGMA-8077",
+          },
+        ])("matches $label", ({ url }) => {
+          const service = matcher(url)
+          expect(service.key).toEqual("jira")
+          expect(service.name).toEqual("jira")
+          expect(service.org).toEqual("moco-bx")
+          expect(service.id).toEqual("ENIGMA-8077")
+          expect(service.match.id).toEqual("ENIGMA-8077")
+          expect(service.match.projectId).toEqual("ENIGMA")
+          expect(service.url).toEqual(url)
+        })
+
+        it.each([
+          "https://moco-bx.atlassian.net/jira/servicedesk/projects/ENIGMA/queues/custom/48",
+          "https://moco-bx.atlassian.net/jira/servicedesk/projects/ENIGMA/queues",
+          "https://moco-bx.atlassian.net/jira/servicedesk/projects/ENIGMA/issues/?jql=project%3DENIGMA",
+          "https://moco-bx.atlassian.net/servicedesk/customer/portal/1/ENIGMA-8077",
+        ])("does not match service management page without ticket: %s", (url) => {
+          expect(matcher(url)).toBeUndefined()
+        })
+
+        it("matches a board without selectedIssue but has no id", () => {
+          const service = matcher(
+            "https://moco-bx.atlassian.net/jira/servicedesk/projects/ENIGMA/boards/4",
+          )
+          expect(service.key).toEqual("jira")
+          expect(service.id).toBeUndefined()
+          expect(service.match.projectId).toEqual("ENIGMA")
+        })
+      })
+
+      it.each([
+        {
+          url: "https://moco-bx.atlassian.net/browse/TEST1-1",
+          id: "TEST1-1",
+        },
+        {
+          url: "https://moco-bx.atlassian.net/browse/TEST1-1#comment-123",
+          id: "TEST1-1",
+        },
+        {
+          url: "https://moco-bx.atlassian.net/jira/software/projects/TEST1/boards/2?selectedIssue=TEST1-1",
+          id: "TEST1-1",
+          projectId: "TEST1",
+        },
+        {
+          url: "https://moco-bx.atlassian.net/jira/software/projects/TEST1/boards/2/backlog?selectedIssue=TEST1-1",
+          id: "TEST1-1",
+          projectId: "TEST1",
+        },
+        {
+          url: "https://moco-bx.atlassian.net/jira/software/projects/TEST1/boards/2/timeline?selectedIssue=TEST1-1",
+          id: "TEST1-1",
+          projectId: "TEST1",
+        },
+        {
+          url: "https://moco-bx.atlassian.net/jira/software/c/projects/TEST1/boards/2?selectedIssue=TEST1-1",
+          id: "TEST1-1",
+          projectId: "TEST1",
+        },
+        {
+          url: "https://moco-bx.atlassian.net/jira/core/projects/TEST1/board?selectedIssue=TEST1-1",
+          id: "TEST1-1",
+          projectId: "TEST1",
+        },
+        {
+          url: "https://moco-bx.atlassian.net/jira/core/projects/TEST1/issues?selectedIssue=TEST1-1",
+          id: "TEST1-1",
+          projectId: "TEST1",
+        },
+      ])("still matches existing jira url $url", ({ url, id, projectId }) => {
+        const service = matcher(url)
+        expect(service.key).toEqual("jira")
+        expect(service.org).toEqual("moco-bx")
+        expect(service.id).toEqual(id)
+        expect(service.match.projectId).toEqual(projectId)
+      })
     })
 
     describe("createEnhancer", () => {
@@ -309,6 +424,35 @@ describe("utils", () => {
         expect(enhancedService.description).toEqual("[4321] Foo")
         expect(enhancedService.projectId).toEqual("4321")
         expect(enhancedService.taskId).toBe(undefined)
+      })
+
+      describe("jira service management", () => {
+        const url =
+          "https://moco-bx.atlassian.net/jira/servicedesk/projects/ENIGMA/queues/custom/48/ENIGMA-8077"
+        // Both description and projectId read the shared Jira issue view summary heading
+        // (queried with double and single quotes respectively), other selectors find nothing.
+        const documentWithSummary = (summary) => ({
+          querySelector: jest.fn((selector) =>
+            selector.includes("issue.views.issue-base.foundation.summary.heading")
+              ? { textContent: summary }
+              : null,
+          ),
+        })
+
+        it("builds the description from the ticket summary", () => {
+          const document = documentWithSummary("VPN access for new employee")
+          const enhancedService = createEnhancer(document)(matcher(url))
+          expect(enhancedService.id).toEqual("ENIGMA-8077")
+          expect(enhancedService.description).toEqual("#ENIGMA-8077 VPN access for new employee")
+          expect(enhancedService.projectId).toEqual("ENIGMA")
+        })
+
+        it("prefers a MOCO project identifier in the summary", () => {
+          const document = documentWithSummary("[4321] VPN access")
+          const enhancedService = createEnhancer(document)(matcher(url))
+          expect(enhancedService.description).toEqual("#ENIGMA-8077 [4321] VPN access")
+          expect(enhancedService.projectId).toEqual("4321")
+        })
       })
 
       it("should use id as service.id when customId is undefined for clickup", () => {
